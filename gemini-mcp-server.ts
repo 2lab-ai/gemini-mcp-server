@@ -40,57 +40,67 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
         inputSchema: {
           type: "object",
           properties: {
-            prompt: {
-              type: "string",
-              description: "The prompt to start the session with."
-            },
-          },
-          required: ["prompt"],
-        },
-      },
-      {
-        name: "gemini-reply",
-        description: "Continue an existing Gemini session.",
-        inputSchema: {
-          type: "object",
-          properties: {
-            prompt: {
-              type: "string",
-              description: "The prompt to continue the conversation."
-            },
-            sessionId: {
-              type: "string",
-              description: "The session ID to continue. If not provided, attempts to use the latest session."
-            },
-          },
-          required: ["prompt"],
-        },
-      },
-    ],
-  };
-});
-
+                        prompt: { 
+                          type: "string",
+                          description: "The prompt to start the session with."
+                        },
+                        model: {
+                          type: "string",
+                          description: "Optional: The model to use (e.g., 'gemini-2.0-flash-exp', 'gemini-1.5-pro')."
+                        }
+                      },
+                      required: ["prompt"],
+                    },
+                  },
+                  {
+                    name: "gemini-reply",
+                    description: "Continue an existing Gemini session.",
+                    inputSchema: {
+                      type: "object",
+                      properties: {
+                        prompt: { 
+                          type: "string",
+                          description: "The prompt to continue the conversation."
+                        },
+                        sessionId: { 
+                          type: "string",
+                          description: "The session ID to continue. If not provided, attempts to use the latest session."
+                        },
+                        model: {
+                          type: "string",
+                          description: "Optional: The model to use for this turn."
+                        }
+                      },
+                      required: ["prompt"],
+                    },
+                  },
+                ],
+              };
+            });
 server.setRequestHandler(CallToolRequestSchema, async (request) => {
   const { name, arguments: args } = request.params;
 
   try {
     if (name === "gemini") {
-        const prompt = (args as { prompt: string }).prompt;
-
+        const { prompt, model } = args as { prompt: string; model?: string };
+        
         // Escape logic: naive JSON stringify usually works for wrapping in double quotes
         // We wrap the whole thing in single quotes for bash to treat it as a literal string (mostly)
-        // But single quotes in the JSON string need to be escaped?
+        // But single quotes in the JSON string need to be escaped? 
         // Let's rely on JSON.stringify to handle content escaping, and pass it directly if we can.
         // safePrompt will be like "Hello" or "He said \"Hello\""
         const safePrompt = JSON.stringify(prompt);
-
+        
         // Command: gemini "prompt" --output-format json
         // We use the string returned by JSON.stringify which includes the surrounding quotes.
         // e.g. gemini "foo" ...
-        const command = `gemini ${safePrompt} --output-format json`;
-
+        let command = `gemini ${safePrompt} --output-format json`;
+        if (model) {
+            command += ` -m ${model}`;
+        }
+        
         const { stdout } = await execAsync(command);
-
+        
         let responseText = "";
         try {
             const json = JSON.parse(stdout);
@@ -100,7 +110,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         }
 
         const sessionId = await getLatestSessionId();
-
+        
         return {
             content: [
                 {
@@ -112,9 +122,9 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     }
 
     if (name === "gemini-reply") {
-        const { prompt, sessionId } = args as { prompt: string; sessionId?: string };
+        const { prompt, sessionId, model } = args as { prompt: string; sessionId?: string; model?: string };
         const targetSession = sessionId || await getLatestSessionId();
-
+        
         if (!targetSession) {
              return {
                 content: [{ type: "text", text: "Error: No session ID provided and no active sessions found." }],
@@ -123,10 +133,12 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         }
 
         const safePrompt = JSON.stringify(prompt);
-        const command = `gemini -r ${targetSession} ${safePrompt} --output-format json`;
-
+        let command = `gemini -r ${targetSession} ${safePrompt} --output-format json`;
+        if (model) {
+            command += ` -m ${model}`;
+        }
+        
         const { stdout } = await execAsync(command);
-
         let responseText = "";
         try {
             const json = JSON.parse(stdout);

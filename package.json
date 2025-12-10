@@ -1,15 +1,29 @@
 {
-  "name": "gemini-mcp-server",
+  "name": "@2lab.ai/gemini-mcp-server",
   "version": "1.0.0",
-  "description": "",
-  "main": "index.js",
+  "description": "MCP server for interacting with Google's Gemini CLI",
+  "main": "./dist/gemini-mcp-server.js",
+  "bin": {
+    "gemini-mcp-server": "./dist/gemini-mcp-server.js"
+  },
+  "files": [
+    "dist"
+  ],
   "scripts": {
+    "build": "tsc",
+    "prepublishOnly": "npm run build",
+    "start": "node dist/gemini-mcp-server.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
-  "keywords": [],
+  "keywords": [
+    "mcp",
+    "gemini",
+    "server",
+    "cli"
+  ],
   "author": "",
   "license": "ISC",
-  "type": "commonjs",
+  "type": "module",
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.24.3",
     "zod": "^4.1.13"
@@ -18,5 +32,8 @@
     "@types/node": "^24.10.2",
     "ts-node": "^10.9.2",
     "typescript": "^5.9.3"
+  },
+  "publishConfig": {
+    "access": "public"
   }
 }

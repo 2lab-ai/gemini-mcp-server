@@ -4,9 +4,17 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import { CallToolRequestSchema, ListToolsRequestSchema } from "@modelcontextprotocol/sdk/types.js";
 import { exec } from "child_process";
 import { promisify } from "util";
-import { writeFileSync, unlinkSync, mkdtempSync, rmdirSync } from "fs";
+import { writeFileSync, unlinkSync, mkdtempSync, rmdirSync, readFileSync } from "fs";
 import { tmpdir } from "os";
-import { join } from "path";
+import { join, dirname } from "path";
+import { fileURLToPath } from "url";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+
+// Read version from package.json
+const packageJson = JSON.parse(readFileSync(join(__dirname, "../package.json"), "utf-8"));
+const VERSION = packageJson.version;
 
 const execAsync = promisify(exec);
 
@@ -28,10 +36,12 @@ function cleanupSystemPromptFile(filePath: string): void {
   }
 }
 
+console.error(`gemini-mcp-server v${VERSION}`);
+
 const server = new Server(
   {
     name: "gemini-mcp-server",
-    version: "1.0.0",
+    version: VERSION,
   },
   {
     capabilities: {

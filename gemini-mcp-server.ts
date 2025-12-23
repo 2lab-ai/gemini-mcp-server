@@ -19,133 +19,134 @@ const server = new Server(
   }
 );
 
-async function getLatestSessionId(): Promise<string | null> {
+interface SessionInfo {
+  index: number;
+  uuid: string;
+}
+
+async function listSessions(): Promise<SessionInfo[]> {
   try {
     const { stdout } = await execAsync('gemini --list-sessions');
     // Output format: "  1. Prompt... (Time) [UUID]"
-    // Regex matches the first line that looks like an item and captures the UUID in brackets
-    const match = stdout.match(/^\s*1\..*?\[([a-f0-9\-]+)\]/m);
-    return match ? match[1] : null;
+    const sessions: SessionInfo[] = [];
+    const regex = /^\s*(\d+)\.\s+.*?\[([a-f0-9\-]+)\]/gm;
+    let match;
+    while ((match = regex.exec(stdout)) !== null) {
+      sessions.push({
+        index: parseInt(match[1], 10),
+        uuid: match[2]
+      });
+    }
+    return sessions;
   } catch (error) {
-    // console.error("Error fetching sessions:", error);
-    return null;
+    return [];
   }
+}
+
+async function getLatestSessionId(): Promise<string | null> {
+  const sessions = await listSessions();
+  // sessions are ordered by index (1 = oldest), so last one is the most recent
+  return sessions.length > 0 ? sessions[sessions.length - 1].uuid : null;
 }
 
 server.setRequestHandler(ListToolsRequestSchema, async () => {
   return {
     tools: [
       {
-        name: "gemini",
+        name: "chat",
         description: "Start a new Gemini session with a prompt. Returns the response and the new Session ID.",
         inputSchema: {
           type: "object",
           properties: {
-                        prompt: { 
-                          type: "string",
-                          description: "The prompt to start the session with."
-                        },
-                        model: {
-                          type: "string",
-                          description: "Optional: The model to use (e.g., 'gemini-2.0-flash-exp', 'gemini-1.5-pro')."
-                        }
-                      },
-                      required: ["prompt"],
-                    },
-                  },
-                  {
-                    name: "gemini-reply",
-                    description: "Continue an existing Gemini session.",
-                    inputSchema: {
-                      type: "object",
-                      properties: {
-                        prompt: { 
-                          type: "string",
-                          description: "The prompt to continue the conversation."
-                        },
-                        sessionId: { 
-                          type: "string",
-                          description: "The session ID to continue. If not provided, attempts to use the latest session."
-                        },
-                        model: {
-                          type: "string",
-                          description: "Optional: The model to use for this turn."
-                        }
-                      },
-                      required: ["prompt"],
-                    },
-                  },
-                ],
-              };
-            });
+            prompt: {
+              type: "string",
+              description: "The prompt to start the session with."
+            },
+            model: {
+              type: "string",
+              description: "Optional: The model to use (e.g., 'gemini-2.0-flash-exp', 'gemini-1.5-pro')."
+            },
+            systemPrompt: {
+              type: "string",
+              description: "Optional: System prompt to set the assistant's behavior."
+            },
+            cwd: {
+              type: "string",
+              description: "Optional: Working directory for the gemini CLI execution."
+            }
+          },
+          required: ["prompt"],
+        },
+      },
+      {
+        name: "chat-reply",
+        description: "Continue an existing Gemini session.",
+        inputSchema: {
+          type: "object",
+          properties: {
+            prompt: {
+              type: "string",
+              description: "The prompt to continue the conversation."
+            },
+            sessionId: {
+              type: "string",
+              description: "The session ID to continue. If not provided, attempts to use the latest session."
+            },
+            model: {
+              type: "string",
+              description: "Optional: The model to use for this turn."
+            },
+            systemPrompt: {
+              type: "string",
+              description: "Optional: System prompt to set the assistant's behavior."
+            },
+            cwd: {
+              type: "string",
+              description: "Optional: Working directory for the gemini CLI execution."
+            }
+          },
+          required: ["prompt"],
+        },
+      },
+    ],
+  };
+});
 server.setRequestHandler(CallToolRequestSchema, async (request) => {
   const { name, arguments: args } = request.params;
 
   try {
-    if (name === "gemini") {
-        const { prompt, model } = args as { prompt: string; model?: string };
-        
-        // Escape logic: naive JSON stringify usually works for wrapping in double quotes
-        // We wrap the whole thing in single quotes for bash to treat it as a literal string (mostly)
-        // But single quotes in the JSON string need to be escaped? 
-        // Let's rely on JSON.stringify to handle content escaping, and pass it directly if we can.
-        // safePrompt will be like "Hello" or "He said \"Hello\""
+    if (name === "chat") {
+        const { prompt, model, systemPrompt, cwd } = args as { prompt: string; model?: string; systemPrompt?: string; cwd?: string };
+
         const safePrompt = JSON.stringify(prompt);
-        
-        // Command: gemini "prompt" --output-format json
-        // We use the string returned by JSON.stringify which includes the surrounding quotes.
-        // e.g. gemini "foo" ...
+
         let command = `gemini ${safePrompt} --output-format json`;
         if (model) {
             command += ` -m ${model}`;
         }
-        
-        const { stdout } = await execAsync(command);
-        
+
+        if (systemPrompt) {
+            const safeSystemPrompt = JSON.stringify(systemPrompt);
+            command += ` --system-instructions ${safeSystemPrompt}`;
+        }
+
+        const { stdout } = await execAsync(command, { encoding: 'utf-8', ...(cwd ? { cwd } : {}) });
+
         let responseText = "";
+        let sessionId: string | null = null;
+
         try {
             const json = JSON.parse(stdout);
             responseText = json.response || JSON.stringify(json);
+            // Extract session_id from JSON response (Gemini CLI includes this)
+            sessionId = json.session_id || null;
         } catch (e) {
-            responseText = stdout;
+            responseText = stdout as string;
         }
 
-        const sessionId = await getLatestSessionId();
-        
-        return {
-            content: [
-                {
-                    type: "text",
-                    text: responseText + (sessionId ? `\n\nSession ID: ${sessionId}` : "")
-                }
-            ]
-        };
-    }
-
-    if (name === "gemini-reply") {
-        const { prompt, sessionId, model } = args as { prompt: string; sessionId?: string; model?: string };
-        const targetSession = sessionId || await getLatestSessionId();
-        
-        if (!targetSession) {
-             return {
-                content: [{ type: "text", text: "Error: No session ID provided and no active sessions found." }],
-                isError: true,
-            };
-        }
-
-        const safePrompt = JSON.stringify(prompt);
-        let command = `gemini -r ${targetSession} ${safePrompt} --output-format json`;
-        if (model) {
-            command += ` -m ${model}`;
-        }
-        
-        const { stdout } = await execAsync(command);
-        let responseText = "";
-        try {
-            const json = JSON.parse(stdout);
-            responseText = json.response || JSON.stringify(json);
-        } catch (e) {
-            responseText = stdout;
+        // Fallback: get session ID from list if not in response
+        if (!sessionId) {
+            sessionId = await getLatestSessionId();
         }
 
         return {
@@ -154,7 +155,49 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
                     type: "text",
                     text: responseText
                 }
-            ]
+            ],
+            _meta: sessionId ? { sessionId } : undefined
+        };
+    }
+
+    if (name === "chat-reply") {
+        const { prompt, sessionId, model, systemPrompt, cwd } = args as { prompt: string; sessionId?: string; model?: string; systemPrompt?: string; cwd?: string };
+
+        // Determine resume target: UUID or "latest"
+        const resumeTarget = sessionId || "latest";
+
+        const safePrompt = JSON.stringify(prompt);
+        let command = `gemini -r ${resumeTarget} ${safePrompt} --output-format json`;
+        if (model) {
+            command += ` -m ${model}`;
+        }
+
+        if (systemPrompt) {
+            const safeSystemPrompt = JSON.stringify(systemPrompt);
+            command += ` --system-instructions ${safeSystemPrompt}`;
+        }
+
+        const { stdout } = await execAsync(command, { encoding: 'utf-8', ...(cwd ? { cwd } : {}) });
+
+        let responseText = "";
+        let newSessionId: string | null = null;
+
+        try {
+            const json = JSON.parse(stdout);
+            responseText = json.response || JSON.stringify(json);
+            newSessionId = json.session_id || null;
+        } catch (e) {
+            responseText = stdout as string;
+        }
+
+        return {
+            content: [
+                {
+                    type: "text",
+                    text: responseText
+                }
+            ],
+            _meta: newSessionId ? { sessionId: newSessionId } : undefined
         };
     }
   } catch (error: any) {

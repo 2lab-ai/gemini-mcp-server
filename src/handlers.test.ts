@@ -73,9 +73,9 @@ describe('Handlers', () => {
         };
       });
 
-      await handleGemini({ prompt: 'Test', model: 'gemini-2.0-flash-exp' });
+      await handleGemini({ prompt: 'Test', model: 'gemini-3-flash' });
 
-      expect(capturedCommand).toContain('-m gemini-2.0-flash-exp');
+      expect(capturedCommand).toContain('-m gemini-3-flash');
     });
   });
 

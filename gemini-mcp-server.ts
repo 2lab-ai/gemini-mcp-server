@@ -4,8 +4,29 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import { CallToolRequestSchema, ListToolsRequestSchema } from "@modelcontextprotocol/sdk/types.js";
 import { exec } from "child_process";
 import { promisify } from "util";
+import { writeFileSync, unlinkSync, mkdtempSync, rmdirSync } from "fs";
+import { tmpdir } from "os";
+import { join } from "path";
 
 const execAsync = promisify(exec);
+
+function createSystemPromptFile(systemPrompt: string): string {
+  const tempDir = mkdtempSync(join(tmpdir(), 'gemini-mcp-'));
+  const filePath = join(tempDir, 'SYSTEM.md');
+  writeFileSync(filePath, systemPrompt, 'utf-8');
+  return filePath;
+}
+
+function cleanupSystemPromptFile(filePath: string): void {
+  try {
+    unlinkSync(filePath);
+    // Remove the temp directory too
+    const tempDir = filePath.substring(0, filePath.lastIndexOf('/'));
+    rmdirSync(tempDir);
+  } catch {
+    // Ignore cleanup errors
+  }
+}
 
 const server = new Server(
   {
@@ -64,7 +85,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
             },
             model: {
               type: "string",
-              description: "Optional: The model to use (e.g., 'gemini-2.0-flash-exp', 'gemini-1.5-pro')."
+              description: "Optional: The model to use (e.g., 'gemini-3-pro', 'gemini-3-flash')."
             },
             systemPrompt: {
               type: "string",
@@ -125,39 +146,52 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             command += ` -m ${model}`;
         }
 
+        // Handle system prompt via temp file and GEMINI_SYSTEM_MD env var
+        let systemPromptFile: string | null = null;
+        const env = { ...process.env };
         if (systemPrompt) {
-            const safeSystemPrompt = JSON.stringify(systemPrompt);
-            command += ` --system-instructions ${safeSystemPrompt}`;
+            systemPromptFile = createSystemPromptFile(systemPrompt);
+            env.GEMINI_SYSTEM_MD = systemPromptFile;
         }
-
-        const { stdout } = await execAsync(command, { encoding: 'utf-8', ...(cwd ? { cwd } : {}) });
-
-        let responseText = "";
-        let sessionId: string | null = null;
 
         try {
-            const json = JSON.parse(stdout);
-            responseText = json.response || JSON.stringify(json);
-            // Extract session_id from JSON response (Gemini CLI includes this)
-            sessionId = json.session_id || null;
-        } catch (e) {
-            responseText = stdout as string;
-        }
+            const { stdout } = await execAsync(command, {
+                encoding: 'utf-8',
+                env,
+                ...(cwd ? { cwd } : {})
+            });
 
-        // Fallback: get session ID from list if not in response
-        if (!sessionId) {
-            sessionId = await getLatestSessionId();
-        }
+            let responseText = "";
+            let sessionId: string | null = null;
 
-        return {
-            content: [
-                {
-                    type: "text",
-                    text: responseText
-                }
-            ],
-            _meta: sessionId ? { sessionId } : undefined
-        };
+            try {
+                const json = JSON.parse(stdout);
+                responseText = json.response || JSON.stringify(json);
+                // Extract session_id from JSON response (Gemini CLI includes this)
+                sessionId = json.session_id || null;
+            } catch (e) {
+                responseText = stdout as string;
+            }
+
+            // Fallback: get session ID from list if not in response
+            if (!sessionId) {
+                sessionId = await getLatestSessionId();
+            }
+
+            return {
+                content: [
+                    {
+                        type: "text",
+                        text: responseText
+                    }
+                ],
+                _meta: sessionId ? { sessionId } : undefined
+            };
+        } finally {
+            if (systemPromptFile) {
+                cleanupSystemPromptFile(systemPromptFile);
+            }
+        }
     }
 
     if (name === "chat-reply") {
@@ -172,33 +206,46 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             command += ` -m ${model}`;
         }
 
+        // Handle system prompt via temp file and GEMINI_SYSTEM_MD env var
+        let systemPromptFile: string | null = null;
+        const env = { ...process.env };
         if (systemPrompt) {
-            const safeSystemPrompt = JSON.stringify(systemPrompt);
-            command += ` --system-instructions ${safeSystemPrompt}`;
+            systemPromptFile = createSystemPromptFile(systemPrompt);
+            env.GEMINI_SYSTEM_MD = systemPromptFile;
         }
-
-        const { stdout } = await execAsync(command, { encoding: 'utf-8', ...(cwd ? { cwd } : {}) });
-
-        let responseText = "";
-        let newSessionId: string | null = null;
 
         try {
-            const json = JSON.parse(stdout);
-            responseText = json.response || JSON.stringify(json);
-            newSessionId = json.session_id || null;
-        } catch (e) {
-            responseText = stdout as string;
-        }
+            const { stdout } = await execAsync(command, {
+                encoding: 'utf-8',
+                env,
+                ...(cwd ? { cwd } : {})
+            });
 
-        return {
-            content: [
-                {
-                    type: "text",
-                    text: responseText
-                }
-            ],
-            _meta: newSessionId ? { sessionId: newSessionId } : undefined
-        };
+            let responseText = "";
+            let newSessionId: string | null = null;
+
+            try {
+                const json = JSON.parse(stdout);
+                responseText = json.response || JSON.stringify(json);
+                newSessionId = json.session_id || null;
+            } catch (e) {
+                responseText = stdout as string;
+            }
+
+            return {
+                content: [
+                    {
+                        type: "text",
+                        text: responseText
+                    }
+                ],
+                _meta: newSessionId ? { sessionId: newSessionId } : undefined
+            };
+        } finally {
+            if (systemPromptFile) {
+                cleanupSystemPromptFile(systemPromptFile);
+            }
+        }
     }
   } catch (error: any) {
       return {

@@ -7,7 +7,7 @@ A Model Context Protocol (MCP) server that provides a bridge to Google's Gemini 
 - **Start New Sessions**: Initiate a new conversation with a specific Gemini model.
 - **Continue Sessions**: Reply to existing sessions using their Session ID.
 - **Session Management**: Automatically detects the latest session ID if one is not provided for replies.
-- **Model Selection**: Supports specifying different Gemini models (e.g., `gemini-2.0-flash-exp`, `gemini-1.5-pro`).
+- **Model Selection**: Supports specifying different Gemini models (e.g., `gemini-3-pro`).
 
 ## Prerequisites
 
@@ -165,7 +165,8 @@ Start a new Gemini session with a prompt.
 
 **Parameters:**
 - `prompt` (required): The prompt to start the session with
-- `model` (optional): The model to use (e.g., 'gemini-2.0-flash-exp', 'gemini-1.5-pro')
+- `model` Optional: The model to use (e.g., 'gemini-3-pro', 'gemini-3-flash').
+
 
 **Returns:** Response text and new Session ID
 

@@ -280,9 +280,9 @@ No sessions found for this project.
         };
       });
 
-      await executeGeminiReply('Test', undefined, 'gemini-2.0-flash-exp');
+      await executeGeminiReply('Test', undefined, 'gemini-3-flash');
 
-      expect(capturedCommand).toContain('-m gemini-2.0-flash-exp');
+      expect(capturedCommand).toContain('-m gemini-3-flash');
     });
 
     it('should pass partial UUID directly to gemini', async () => {

@@ -27,7 +27,7 @@ gemini-mcp-server는 Gemini CLI를 MCP(Model Context Protocol) 도구로 래핑�
     },
     "model": {
       "type": "string",
-      "description": "사용할 모델 (예: 'gemini-2.0-flash-exp', 'gemini-1.5-pro')"
+      "description": "Optional: The model to use (e.g., 'gemini-3-pro', 'gemini-3-flash')."
     },
     "systemPrompt": {
       "type": "string",
@@ -51,7 +51,7 @@ gemini-mcp-server는 Gemini CLI를 MCP(Model Context Protocol) 도구로 래핑�
     "name": "chat",
     "arguments": {
       "prompt": "Hello, who are you?",
-      "model": "gemini-2.0-flash-exp",
+      "model": "gemini-3-flash",
       "systemPrompt": "You are a helpful coding assistant.",
       "cwd": "/Users/user/my-project"
     }
@@ -189,14 +189,21 @@ MCP 서버가 내부적으로 실행하는 Gemini CLI 명령:
 ### chat
 
 ```bash
-gemini "<prompt>" --output-format json [-m <model>] [--system-instructions "<systemPrompt>"]
+gemini "<prompt>" --output-format json [-m <model>]
 ```
 
 ### chat-reply
 
 ```bash
-gemini -r <sessionId|latest> "<prompt>" --output-format json [-m <model>] [--system-instructions "<systemPrompt>"]
+gemini -r <sessionId|latest> "<prompt>" --output-format json [-m <model>]
 ```
+
+### System Prompt 처리
+
+`systemPrompt` 파라메터가 제공되면:
+1. `/tmp/gemini-mcp-XXXXXX/SYSTEM.md` 임시 파일 생성
+2. `GEMINI_SYSTEM_MD` 환경변수로 파일 경로 전달
+3. CLI 실행 후 임시 파일 삭제
 
 ---
 

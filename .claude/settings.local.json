@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm whoami:*)",
+      "Bash(npm login)",
+      "Bash(npm view:*)",
+      "Bash(curl:*)",
+      "Bash(npm publish:*)"
+    ]
+  }
+}
